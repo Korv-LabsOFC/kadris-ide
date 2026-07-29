@@ -7,6 +7,10 @@ import { z } from 'zod'
 import { WebSocket, WebSocketServer, type RawData } from 'ws'
 import { WorkspaceService } from '../main/services/workspace-service'
 import { CodexService } from '../main/services/codex-service'
+import { GitService } from '../main/services/git-service'
+import { SearchService } from '../main/services/search-service'
+import { SessionService } from '../main/services/session-service'
+import { PermissionService } from '../main/services/permission-service'
 import {
   createFileInputSchema,
   createFolderInputSchema,
@@ -21,6 +25,9 @@ import {
   codexRunInputSchema,
   type AppError
 } from '../shared/contracts'
+import { gitAddInputSchema, gitCommitInputSchema, gitCheckoutInputSchema } from '../shared/git-contracts'
+import { searchInputSchema } from '../shared/search-contracts'
+import { sessionStateSchema } from '../shared/session-contracts'
 import {
   terminalCloseInputSchema,
   terminalCreateInputSchema,
@@ -28,6 +35,7 @@ import {
   terminalWriteInputSchema
 } from '../shared/terminal-contracts'
 import type { EnvironmentReport } from '../environment/types'
+import { AndroidPathAuthorizationError, createAndroidPathPolicy } from './android-path-policy'
 import { LocalTerminalManager } from './terminal-manager'
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024 + 16 * 1024
@@ -56,6 +64,8 @@ export interface LocalServerOptions {
   port?: number
   safeMode?: boolean
   version?: string
+  authorizedSharedStorageRoots?: readonly string[]
+  pathPolicyOverrides?: { home?: string; prefix?: string; tempRoot?: string }
 }
 
 export interface LocalServerHandle {
@@ -77,7 +87,14 @@ function errorResult(error: unknown): { ok: false; error: AppError } {
       : /absolute paths|escapes workspace|not a directory|not a regular file|Android blocked|invalid/i.test(message)
         ? 'INVALID_INPUT'
         : 'IO_ERROR'
-  return { ok: false, error: { code, message } }
+  return {
+    ok: false,
+    error: {
+      code: error instanceof AndroidPathAuthorizationError ? 'NOT_AUTHORIZED' : code,
+      message,
+      ...(error instanceof AndroidPathAuthorizationError ? { pathCode: error.decision.code } : {})
+    }
+  }
 }
 
 function writeSecurityHeaders(response: ServerResponse): void {
@@ -135,14 +152,6 @@ function isWithin(root: string, candidate: string): boolean {
   return relation === '' || (relation !== '..' && !relation.startsWith(`..${sep}`))
 }
 
-function isAndroidRestricted(report: EnvironmentReport, path: string): boolean {
-  if (report.platform !== 'android') return false
-  const normalized = resolve(path)
-  const exactRestricted = ['/data', '/data/data', '/data/user', '/data/user/0']
-  if (exactRestricted.some((entry) => normalized === entry || normalized.startsWith(`${entry}${sep}`))) return true
-  return /(?:^|[/\\])Android[/\\](?:data|obb)(?:[/\\]|$)/i.test(normalized)
-}
-
 async function listen(server: Server, host: string, requestedPort: number): Promise<number> {
   for (let port = requestedPort; port <= requestedPort + 20; port += 1) {
     try {
@@ -172,10 +181,18 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
   if (host !== '127.0.0.1' && host !== 'localhost') throw new Error('Network exposure is not supported; use 127.0.0.1')
   const token = randomBytes(32).toString('base64url')
   const webRoot = await realpath(options.webRoot)
+  const policyHome = options.pathPolicyOverrides?.home ?? process.env.HOME
+  const policyPrefix = options.pathPolicyOverrides?.prefix ?? process.env.PREFIX
+  const pathPolicy = await createAndroidPathPolicy({
+    report: options.report,
+    ...(policyHome ? { home: policyHome } : {}),
+    ...(policyPrefix ? { prefix: policyPrefix } : {}),
+    ...(options.pathPolicyOverrides?.tempRoot ? { tempRoot: options.pathPolicyOverrides.tempRoot } : {}),
+    ...(options.authorizedSharedStorageRoots ? { authorizedSharedStorageRoots: options.authorizedSharedStorageRoots } : {})
+  })
   const workspace = new WorkspaceService()
   if (options.workspacePath) {
-    if (isAndroidRestricted(options.report, options.workspacePath)) throw new Error('Android blocked this restricted directory')
-    await workspace.setRoot(options.workspacePath)
+    await workspace.setRoot(await pathPolicy.assertAuthorized(options.workspacePath))
   }
   let expectedHost = ''
   let expectedOrigin = ''
@@ -196,6 +213,25 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
   const codex = new CodexService()
   const removeCodexAuthListener = codex.addAuthListener((payload) => emitSocketEvent('codex.auth', payload))
   const removeCodexRunListener = codex.addRunListener((payload) => emitSocketEvent('codex.run', payload))
+  let gitService: GitService | null = null
+  let searchService: SearchService | null = null
+  let sessionService: SessionService | null = null
+  const permissionService = new PermissionService()
+
+  function refreshWorkspaceServices(): void {
+    const root = workspace.getRoot()
+    if (root) {
+      gitService = new GitService(root)
+      searchService = new SearchService(root)
+      sessionService = new SessionService(root)
+    } else {
+      gitService = null
+      searchService = null
+      sessionService = null
+    }
+  }
+
+  refreshWorkspaceServices()
 
   const validateRequest = (request: IncomingMessage, requireAuth = true): { ok: true; url: URL } | { ok: false; status: number; message: string } => {
     if (request.headers.host !== expectedHost) return { ok: false, status: 421, message: 'Invalid Host header' }
@@ -232,8 +268,9 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
       }
       if (request.method === 'POST' && url.pathname === '/api/workspace/open') {
         const input = z.object({ path: z.string().min(1).max(4096) }).strict().parse(await readJson(request))
-        if (isAndroidRestricted(options.report, input.path)) throw new Error('Android blocked this restricted directory')
-        writeJson(response, 200, { ok: true, value: await workspace.setRoot(input.path) })
+        const result = await workspace.setRoot(await pathPolicy.assertAuthorized(input.path))
+        refreshWorkspaceServices()
+        writeJson(response, 200, { ok: true, value: result })
         return
       }
       if (request.method === 'GET' && url.pathname === '/api/workspace/list') {
@@ -301,6 +338,27 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Loc
         writeJson(response, 200, { ok: true, value: null })
         return
       }
+      if (request.method === 'GET' && url.pathname === '/api/git/is-repo') { writeJson(response, 200, { ok: true, value: await gitService?.isRepo() ?? false }); return }
+      if (request.method === 'POST' && url.pathname === '/api/git/init') { if (!gitService) throw new Error('No workspace is open'); await gitService.init(); refreshWorkspaceServices(); writeJson(response, 200, { ok: true, value: null }); return }
+      if (request.method === 'GET' && url.pathname === '/api/git/status') { if (!gitService) throw new Error('No workspace is open'); writeJson(response, 200, { ok: true, value: await gitService.status() }); return }
+      if (request.method === 'GET' && url.pathname === '/api/git/diff') { if (!gitService) throw new Error('No workspace is open'); writeJson(response, 200, { ok: true, value: await gitService.diff() }); return }
+      if (request.method === 'POST' && url.pathname === '/api/git/add') { if (!gitService) throw new Error('No workspace is open'); const i = gitAddInputSchema.parse(body); await gitService.add(i.files); writeJson(response, 200, { ok: true, value: null }); return }
+      if (request.method === 'POST' && url.pathname === '/api/git/commit') { if (!gitService) throw new Error('No workspace is open'); const i = gitCommitInputSchema.parse(body); await gitService.commit(i.message, i.all); writeJson(response, 200, { ok: true, value: null }); return }
+      if (request.method === 'GET' && url.pathname === '/api/git/log') { if (!gitService) throw new Error('No workspace is open'); writeJson(response, 200, { ok: true, value: await gitService.log() }); return }
+      if (request.method === 'GET' && url.pathname === '/api/git/branch') { if (!gitService) throw new Error('No workspace is open'); writeJson(response, 200, { ok: true, value: await gitService.branch() }); return }
+      if (request.method === 'POST' && url.pathname === '/api/git/checkout') { if (!gitService) throw new Error('No workspace is open'); const i = gitCheckoutInputSchema.parse(body); await gitService.checkout(i.branch, i.create); writeJson(response, 200, { ok: true, value: null }); return }
+      if (request.method === 'POST' && url.pathname === '/api/git/stash') { if (!gitService) throw new Error('No workspace is open'); await gitService.stash(); writeJson(response, 200, { ok: true, value: null }); return }
+      if (request.method === 'POST' && url.pathname === '/api/git/stash-pop') { if (!gitService) throw new Error('No workspace is open'); await gitService.stashPop(); writeJson(response, 200, { ok: true, value: null }); return }
+      if (request.method === 'GET' && url.pathname === '/api/git/stash-list') { if (!gitService) throw new Error('No workspace is open'); writeJson(response, 200, { ok: true, value: await gitService.stashList() }); return }
+      if (request.method === 'POST' && url.pathname === '/api/git/push') { if (!gitService) throw new Error('No workspace is open'); await gitService.push(); writeJson(response, 200, { ok: true, value: null }); return }
+      if (request.method === 'POST' && url.pathname === '/api/git/pull') { if (!gitService) throw new Error('No workspace is open'); await gitService.pull(); writeJson(response, 200, { ok: true, value: null }); return }
+      if (request.method === 'POST' && url.pathname === '/api/git/fetch') { if (!gitService) throw new Error('No workspace is open'); await gitService.fetch(); writeJson(response, 200, { ok: true, value: null }); return }
+      if (request.method === 'POST' && url.pathname === '/api/search') { if (!searchService) throw new Error('No workspace is open'); const i = searchInputSchema.parse(body); writeJson(response, 200, { ok: true, value: await searchService.search(i) }); return }
+      if (request.method === 'POST' && url.pathname === '/api/session/save') { if (!sessionService) throw new Error('No workspace is open'); const i = sessionStateSchema.parse(body); await sessionService.save(i); writeJson(response, 200, { ok: true, value: null }); return }
+      if (request.method === 'GET' && url.pathname === '/api/session/load') { writeJson(response, 200, { ok: true, value: sessionService ? await sessionService.load() : null }); return }
+      if (request.method === 'POST' && url.pathname === '/api/session/clear') { if (!sessionService) throw new Error('No workspace is open'); await sessionService.clear(); writeJson(response, 200, { ok: true, value: null }); return }
+      if (request.method === 'GET' && url.pathname === '/api/permissions/pending') { writeJson(response, 200, { ok: true, value: permissionService.getPendingRequests() }); return }
+      if (request.method === 'POST' && url.pathname === '/api/permissions/resolve') { const i = z.object({ id: z.string().uuid(), approved: z.boolean() }).parse(body); permissionService.resolvePermission({ id: i.id, approved: i.approved, remember: false }); writeJson(response, 200, { ok: true, value: null }); return }
       writeJson(response, 404, { ok: false, error: { code: 'NOT_FOUND', message: 'Unknown API endpoint' } })
     } catch (error) {
       const payload = errorResult(error)

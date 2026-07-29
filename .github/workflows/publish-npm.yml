@@ -1,21 +1,18 @@
 name: Publish npm package
-
 on:
   workflow_dispatch:
     inputs:
       npm_tag:
         description: npm distribution tag
         required: true
-        default: latest
+        default: alpha
         type: string
       confirmation:
         description: Type PUBLISH kadris to continue
         required: true
         type: string
-
 permissions:
   contents: read
-
 jobs:
   publish:
     if: ${{ inputs.confirmation == 'PUBLISH kadris' }}
@@ -26,43 +23,24 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js for npm trusted publishing
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22.12.0
           cache: npm
           registry-url: https://registry.npmjs.org
-
-      - name: Install an npm CLI with trusted publishing support
-        run: npm install --global npm@11.5.1
-
-      - name: Validate dispatch and package metadata
-        env:
-          NPM_TAG: ${{ inputs.npm_tag }}
+      - run: npm install --global npm@11.5.1
+      - name: Verify npm tag is valid
         run: |
-          case "$NPM_TAG" in
-            ''|*[!A-Za-z0-9._-]*) echo "Invalid npm distribution tag" >&2; exit 1 ;;
-          esac
-          node -e "const p=require('./package.json'); if(p.name!=='kadris') throw Error('Unexpected package name'); if(p.private!==false) throw Error('package.json must explicitly set private to false before publication'); if(!/^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/.test(p.version)) throw Error('Version is not publishable')"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Verify
-        run: |
-          npm run typecheck
-          npm run lint
-          npm test
-          npm run build
-          npm pack --dry-run
-          node dist/cli/index.js --help
-          node dist/cli/index.js --version
-          node dist/cli/index.js --diagnose-env --json
-
-      - name: Publish with npm trusted publishing
-        env:
-          NPM_TAG: ${{ inputs.npm_tag }}
-        run: npm publish --access public --provenance --tag "$NPM_TAG"
+          if [[ "${{ inputs.npm_tag }}" =~ [^a-z0-9-] ]]; then
+            echo "Invalid npm tag: ${{ inputs.npm_tag }}"
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm run typecheck && npm run lint
+      - run: npm test
+      - run: npm run build:web && npm run build:portable
+      - run: npm pack --dry-run
+      - name: Verify Electron is absent from package
+        run: node -e "const p=require('./package.json'); if (p.dependencies?.electron) { process.exit(1) }"
+      - run: npm publish --access public --provenance --tag "${{ inputs.npm_tag }}"

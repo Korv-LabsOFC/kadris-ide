@@ -72,11 +72,19 @@ import {
   liveServerStatusSchema,
   type LiveServerStartInput
 } from '../shared/live-server-contracts'
+import {
+  gitStatusSchema, gitDiffSchema, gitCommitLogSchema, gitBranchSchema, gitStashSchema,
+  gitCommitInputSchema, gitCheckoutInputSchema, gitAddInputSchema,
+  type GitAddInput, type GitCommitInput, type GitCheckoutInput
+} from '../shared/git-contracts'
+import { searchInputSchema, searchResultSchema, type SearchInput } from '../shared/search-contracts'
+import { sessionStateSchema, type SessionState } from '../shared/session-contracts'
+import { type PermissionRequest } from '../shared/permission-contracts'
 
 const AUTH_EVENT_CHANNEL = 'codex:auth-event:v1'
 const RUN_EVENT_CHANNEL = 'codex:run-event:v1'
 
-function parseResult<T>(result: unknown, valueSchema: { parse: (value: unknown) => T }): Result<T> {
+function parseResult<T>(result: unknown, valueSchema: z.ZodType<T>): Result<T> {
   if (typeof result !== 'object' || result === null || !('ok' in result)) throw new Error('Malformed IPC response')
   const response = result as { ok: unknown; value?: unknown; error?: unknown }
   if (response.ok === true) return { ok: true, value: valueSchema.parse(response.value) }
@@ -213,6 +221,37 @@ const api: KadrisDesktopApi = Object.freeze({
     },
     stop: async () => parseResult(await ipcRenderer.invoke(LIVE_SERVER_CHANNELS.stop), z.null()),
     getStatus: async () => parseResult(await ipcRenderer.invoke(LIVE_SERVER_CHANNELS.getStatus), liveServerStatusSchema)
+  }),
+  git: Object.freeze({
+    isRepo: async () => parseResult(await ipcRenderer.invoke(IPC_CHANNELS.gitIsRepo), z.boolean()),
+    init: async () => parseResult(await ipcRenderer.invoke(IPC_CHANNELS.gitInit), z.null()),
+    status: async () => parseResult(await ipcRenderer.invoke(IPC_CHANNELS.gitStatus), gitStatusSchema),
+    diff: async () => parseResult(await ipcRenderer.invoke(IPC_CHANNELS.gitDiff), gitDiffSchema),
+    add: async (input: GitAddInput) => { const parsed = gitAddInputSchema.parse(input); return parseResult(await ipcRenderer.invoke(IPC_CHANNELS.gitAdd, parsed), z.null()) },
+    commit: async (input: GitCommitInput) => { const parsed = gitCommitInputSchema.parse(input); return parseResult(await ipcRenderer.invoke(IPC_CHANNELS.gitCommit, parsed), z.null()) },
+    log: async () => parseResult(await ipcRenderer.invoke(IPC_CHANNELS.gitLog), gitCommitLogSchema),
+    branch: async () => parseResult(await ipcRenderer.invoke(IPC_CHANNELS.gitBranch), gitBranchSchema),
+    checkout: async (input: GitCheckoutInput) => { const parsed = gitCheckoutInputSchema.parse(input); return parseResult(await ipcRenderer.invoke(IPC_CHANNELS.gitCheckout, parsed), z.null()) },
+    stash: async () => parseResult(await ipcRenderer.invoke(IPC_CHANNELS.gitStash), z.null()),
+    stashPop: async () => parseResult(await ipcRenderer.invoke(IPC_CHANNELS.gitStashPop), z.null()),
+    stashList: async () => parseResult(await ipcRenderer.invoke(IPC_CHANNELS.gitStashList), gitStashSchema),
+    push: async () => parseResult(await ipcRenderer.invoke(IPC_CHANNELS.gitPush), z.null()),
+    pull: async () => parseResult(await ipcRenderer.invoke(IPC_CHANNELS.gitPull), z.null()),
+    fetch: async () => parseResult(await ipcRenderer.invoke(IPC_CHANNELS.gitFetch), z.null())
+  }),
+  search: Object.freeze({
+    query: async (input: SearchInput) => { const parsed = searchInputSchema.parse(input); return parseResult(await ipcRenderer.invoke(IPC_CHANNELS.searchQuery, parsed), searchResultSchema) }
+  }),
+  session: Object.freeze({
+    save: async (state: SessionState) => { const parsed = sessionStateSchema.parse(state); return parseResult(await ipcRenderer.invoke(IPC_CHANNELS.sessionSave, parsed), z.null()) },
+    load: async (): Promise<Result<SessionState | null>> => parseResult(await ipcRenderer.invoke(IPC_CHANNELS.sessionLoad), sessionStateSchema.nullable()),
+    clear: async () => parseResult(await ipcRenderer.invoke(IPC_CHANNELS.sessionClear), z.null())
+  }),
+  permissions: Object.freeze({
+    getPendingRequests: () => [] as PermissionRequest[],
+    resolvePermission: () => undefined,
+    getHistory: () => ({ approved: [] as string[], denied: [] as string[] }),
+    setAutoApprove: () => undefined
   })
 })
 

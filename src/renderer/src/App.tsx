@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Braces, Command as CommandIcon, FileText, ShieldCheck, X, Save, ExternalLink, Image as ImageIcon } from 'lucide-react'
 import type { AppInfo, Workspace, WorkspaceDocument, WorkspaceEntry } from '../../shared/contracts'
 import { ActivityBar } from './components/ActivityBar'
@@ -8,10 +8,14 @@ import { Explorer } from './components/Explorer'
 import { TerminalPanel } from './components/TerminalPanel'
 import { AiProviderSettings } from './components/AiProviderSettings'
 import { AgentPanel } from './components/AgentPanel'
-import MonacoEditor from './components/MonacoEditor'
+import { GitPanel } from './components/GitPanel'
+import { SearchPanel } from './components/SearchPanel'
+import { PermissionModal } from './components/PermissionModal'
 import ImageViewer from './components/ImageViewer'
 import type { Command, ViewId } from './commands'
 import { usePlatformBridge } from './platform/PlatformBridgeContext'
+
+const MonacoEditor = lazy(async () => import('./components/MonacoEditor'))
 
 function getViewerMode(fileName: string): 'code' | 'image' | 'html' | 'text' {
   const ext = fileName.split('.').pop()?.toLowerCase() ?? ''
@@ -57,24 +61,29 @@ export function App() {
         setTreeVersion((v) => v + 1)
         if (autoOpen.openFile) {
           const fileToOpen = autoOpen.openFile
-          setTimeout(() => {
-            void handleFileOpen(fileToOpen)
-          }, 1000)
+          setTimeout(() => { handleFileOpen(fileToOpen) }, 1000)
         }
       } catch { /* ignore */ }
       window.history.replaceState({}, '', window.location.pathname)
     } else {
-      const timeout = window.setTimeout(() => {
-        void bridge.workspace.getCurrent().then(async (current) => {
-          if (!current.ok || !current.value) return
-          const listed = await bridge.workspace.listDirectory({ relativePath: '' })
-          setWorkspace(current.value)
-          if (listed.ok) {
-            setEntries(listed.value)
-            setTreeVersion((version) => version + 1)
-          } else setError(listed.error.message)
-        })
-      }, bridge.runtime === 'electron' ? 100 : 0)
+      const timeout = window.setTimeout(() => { void (async () => {
+        const current = await bridge.workspace.getCurrent()
+        if (!current.ok || !current.value) return
+        const listed = await bridge.workspace.listDirectory({ relativePath: '' })
+        setWorkspace(current.value)
+        if (listed.ok) {
+          setEntries(listed.value)
+          setTreeVersion((version) => version + 1)
+        } else setError(listed.error.message)
+        const session = await bridge.session.load()
+        if (session.ok && session.value) {
+          const tab = session.value.activeTab
+          if (tab && listed.ok) {
+            const match = listed.value.find((e) => e.relativePath === tab)
+            if (match) setTimeout(() => { void openDocument(match) }, 500)
+          }
+        }
+      })() }, bridge.runtime === 'electron' ? 100 : 0)
       return () => window.clearTimeout(timeout)
     }
   }, [bridge])
@@ -117,6 +126,14 @@ export function App() {
     }
   }
 
+  async function saveSession(): Promise<void> {
+    const ws = workspace
+    if (!ws) return
+    const tabs: { relativePath: string; scrollPosition: number; cursorLine: number; cursorColumn: number }[] = []
+    if (document) tabs.push({ relativePath: document.relativePath, scrollPosition: 0, cursorLine: 0, cursorColumn: 0 })
+    await bridge.session.save({ version: 1, workspace: ws.path, openTabs: tabs, activeTab: document?.relativePath ?? null, sidebarWidth: 280, fontFamily: '', fontSize: 14 })
+  }
+
   async function openWorkspace(): Promise<void> {
     if (openingWorkspace.current) return
     openingWorkspace.current = true
@@ -124,6 +141,7 @@ export function App() {
     setLoading(true)
     setError(null)
     try {
+      await saveSession()
       const result = await bridge.workspace.choose()
       if (currentOperation !== operationId.current) return
       if (!result.ok) {
@@ -197,6 +215,7 @@ export function App() {
 
   function closeDocument(): void {
     documentOperationId.current += 1
+    void saveSession()
     setDocument(null)
     setDocumentError(null)
     setDocumentLoading(false)
@@ -289,8 +308,12 @@ export function App() {
     { id: 'workspace.refresh', title: 'Refresh Explorer', category: 'Workspace', run: refreshWorkspace },
     { id: 'workspace.save', title: 'Save File', category: 'Workspace', shortcut: 'Ctrl+S', run: handleSave },
     { id: 'view.explorer', title: 'Show Explorer', category: 'View', run: () => setActiveView('explorer') },
+    { id: 'view.search', title: 'Show Search', category: 'View', run: () => setActiveView('search') },
+    { id: 'view.source-control', title: 'Show Source Control', category: 'View', shortcut: 'Ctrl+Shift+G', run: () => setActiveView('source-control') },
     { id: 'view.agent', title: 'Show Agent', category: 'View', run: () => setActiveView('agent') },
-    { id: 'view.settings', title: 'Show Settings', category: 'View', run: () => setActiveView('settings') }
+    { id: 'view.settings', title: 'Show Settings', category: 'View', run: () => setActiveView('settings') },
+    { id: 'git.init', title: 'Init Repository', category: 'Git', run: () => { void bridge.git.init().then(() => setActiveView('source-control')) } },
+    { id: 'git.refresh', title: 'Refresh Git Status', category: 'Git', run: () => setActiveView('source-control') }
   ]
 
   return <div className="app-shell">
@@ -312,14 +335,13 @@ export function App() {
           onRename={(oldPath, newPath) => { void handleRename(oldPath, newPath) }}
           onDelete={(path) => { void handleDelete(path) }}
         />
-      : activeView === 'agent'
-        ? <AgentPanel />
-        : activeView === 'settings'
-          ? <AiProviderSettings />
-          : <aside className="side-panel" aria-label={activeView}>
-              <header className="panel-header"><span>{activeView.replace('-', ' ').toLocaleUpperCase()}</span></header>
-              <div className="empty-panel"><p>{`${activeView.replace('-', ' ')} is planned for a later development phase.`}</p></div>
-            </aside>
+      : activeView === 'search'
+        ? <SearchPanel onOpenFile={(path) => handleFileOpen(path)} />
+        : activeView === 'source-control'
+          ? <GitPanel />
+          : activeView === 'agent'
+            ? <AgentPanel />
+            : <AiProviderSettings />
     }
     <main className="editor-area">
       <div className={`editor-tab${document ? ' document-tab' : ''}`}>
@@ -352,12 +374,14 @@ export function App() {
                       </button>
                       {editingContent === null && <i>READ ONLY</i>}
                     </div>
-                    <MonacoEditor
-                      value={editingContent ?? document.content}
-                      fileName={document.relativePath}
-                      onChange={handleEditorChange}
-                      readOnly={editingContent === null}
-                    />
+                    <Suspense fallback={<div className="document-state">Loading editor...</div>}>
+                      <MonacoEditor
+                        value={editingContent ?? document.content}
+                        fileName={document.relativePath}
+                        onChange={handleEditorChange}
+                        readOnly={editingContent === null}
+                      />
+                    </Suspense>
                   </section>
                 )}
                 {viewerMode === 'image' && (
@@ -418,5 +442,6 @@ export function App() {
       <span>{appInfo ? `v${appInfo.version}` : appInfoFailed ? 'Version unavailable' : 'Starting...'}</span>
     </footer>
     {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} onError={(message) => setError(message)} />}
+    <PermissionModal />
   </div>
 }

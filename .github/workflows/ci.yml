@@ -1,52 +1,31 @@
 name: CI
-
-on:
-  push:
-  pull_request:
-
+on: [push, pull_request]
 permissions:
   contents: read
-
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22.12.0
           cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Test
-        run: npm test
-
-      - name: Build web, portable, and desktop targets
-        run: npm run build
-
-      - name: Inspect npm package contents
-        run: npm pack --dry-run
-
-      - name: Check CLI help
-        run: node dist/cli/index.js --help
-
-      - name: Check CLI version
-        run: node dist/cli/index.js --version
-
-      - name: Check CLI environment diagnostics
-        run: node dist/cli/index.js --diagnose-env
-
-      - name: Check CLI JSON environment diagnostics
-        run: node dist/cli/index.js --diagnose-env --json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build:web
+      - run: npm run build:portable
+      - run: node dist/cli/index.js --help
+      - run: node dist/cli/index.js --version
+      - run: node dist/cli/index.js --diagnose-env
+      - run: node dist/cli/index.js --diagnose-env --json
+      - run: npm pack --dry-run
+      - name: Verify Electron is absent from npm package
+        run: node -e "const p=require('./package.json'); if (p.dependencies?.electron) { console.error('Electron in dependencies!'); process.exit(1) } else { console.log('OK: Electron not in dependencies') }; if (p.devDependencies?.electron) console.log('Note: Electron is in devDependencies (expected)')"

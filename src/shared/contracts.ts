@@ -15,6 +15,13 @@ import type {
   SaveApiKeyInput,
   SetOllamaEndpointInput
 } from './ai-provider-contracts'
+import type { SearchInput, SearchResult } from './search-contracts'
+import type { SessionState } from './session-contracts'
+import type { PermissionRequest } from './permission-contracts'
+import type {
+  GitStatus, GitDiff, GitCommitLog, GitBranchInfo, GitStashInfo,
+  GitAddInput, GitCommitInput, GitCheckoutInput
+} from './git-contracts'
 
 export const IPC_CHANNELS = {
   appGetInfo: 'app:get-info:v1',
@@ -33,12 +40,32 @@ export const IPC_CHANNELS = {
   codexCancelLogin: 'codex:cancel-login:v1',
   codexLogout: 'codex:logout:v1',
   codexRun: 'codex:run:v1',
-  codexCancelRun: 'codex:cancel-run:v1'
+  codexCancelRun: 'codex:cancel-run:v1',
+  gitIsRepo: 'git:is-repo:v1',
+  gitInit: 'git:init:v1',
+  gitStatus: 'git:status:v1',
+  gitDiff: 'git:diff:v1',
+  gitAdd: 'git:add:v1',
+  gitCommit: 'git:commit:v1',
+  gitLog: 'git:log:v1',
+  gitBranch: 'git:branch:v1',
+  gitCheckout: 'git:checkout:v1',
+  gitStash: 'git:stash:v1',
+  gitStashPop: 'git:stash-pop:v1',
+  gitStashList: 'git:stash-list:v1',
+  gitPush: 'git:push:v1',
+  gitPull: 'git:pull:v1',
+  gitFetch: 'git:fetch:v1',
+  searchQuery: 'search:query:v1',
+  sessionSave: 'session:save:v1',
+  sessionLoad: 'session:load:v1',
+  sessionClear: 'session:clear:v1'
 } as const
 
 export const errorSchema = z.object({
   code: z.enum(['INVALID_INPUT', 'NOT_FOUND', 'NOT_AUTHORIZED', 'IO_ERROR', 'INTERNAL_ERROR', 'UNSUPPORTED', 'TIMEOUT', 'RATE_LIMITED']),
-  message: z.string().max(500)
+  message: z.string().max(500),
+  pathCode: z.string().max(64).optional()
 })
 
 export type AppError = z.infer<typeof errorSchema>
@@ -269,6 +296,37 @@ export interface PlatformBridge {
     start: (input: { filePath: string }) => Promise<Result<null>>
     stop: () => Promise<Result<null>>
     getStatus: () => Promise<Result<{ running: boolean; url: string | null; filePath: string | null }>>
+  }
+  git: {
+    isRepo: () => Promise<Result<boolean>>
+    init: () => Promise<Result<null>>
+    status: () => Promise<Result<GitStatus>>
+    diff: (path?: string, staged?: boolean) => Promise<Result<GitDiff>>
+    add: (input: GitAddInput) => Promise<Result<null>>
+    commit: (input: GitCommitInput) => Promise<Result<null>>
+    log: (maxCount?: number) => Promise<Result<GitCommitLog>>
+    branch: () => Promise<Result<GitBranchInfo>>
+    checkout: (input: GitCheckoutInput) => Promise<Result<null>>
+    stash: () => Promise<Result<null>>
+    stashPop: () => Promise<Result<null>>
+    stashList: () => Promise<Result<GitStashInfo>>
+    push: () => Promise<Result<null>>
+    pull: () => Promise<Result<null>>
+    fetch: () => Promise<Result<null>>
+  }
+  search: {
+    query: (input: SearchInput) => Promise<Result<SearchResult>>
+  }
+  session: {
+    save: (state: SessionState) => Promise<Result<null>>
+    load: () => Promise<Result<SessionState | null>>
+    clear: () => Promise<Result<null>>
+  }
+  permissions: {
+    getPendingRequests: () => PermissionRequest[]
+    resolvePermission: (id: string, approved: boolean) => void
+    getHistory: () => { approved: string[]; denied: string[] }
+    setAutoApprove: (action: string) => void
   }
 }
 

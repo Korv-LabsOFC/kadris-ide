@@ -58,7 +58,7 @@ export function safeHandler<T>(handler: (event: IpcMainInvokeEvent, input: unkno
   }
 }
 
-export function registerIpc(workspaceService: WorkspaceService, isTrustedSender: (event: IpcMainInvokeEvent) => boolean): () => void {
+export function registerIpc(workspaceService: WorkspaceService, isTrustedSender: (event: IpcMainInvokeEvent) => boolean, onWorkspaceChanged?: () => void): () => void {
   ipcMain.handle(IPC_CHANNELS.appGetInfo, safeHandler(
     () => appInfoSchema.parse({ name: app.getName(), version: app.getVersion(), platform: process.platform }),
     isTrustedSender
@@ -67,7 +67,9 @@ export function registerIpc(workspaceService: WorkspaceService, isTrustedSender:
   ipcMain.handle(IPC_CHANNELS.workspaceChoose, safeHandler(async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'], title: 'Open workspace' })
     if (result.canceled || !result.filePaths[0]) return null
-    return workspaceSchema.parse(await workspaceService.setRoot(result.filePaths[0]))
+    const workspace = workspaceSchema.parse(await workspaceService.setRoot(result.filePaths[0]))
+    onWorkspaceChanged?.()
+    return workspace
   }, isTrustedSender))
 
   ipcMain.handle(IPC_CHANNELS.workspaceGetCurrent, safeHandler(() => {

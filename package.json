@@ -4,7 +4,7 @@
   "desktopName": "kadris.desktop",
   "author": "Kadris contributors",
   "homepage": "https://github.com/israelmarques1024-dotcom/kadris-ide#readme",
-  "version": "1.0.1",
+  "version": "0.1.0-alpha.0",
   "description": "Kadris hybrid Electron and secure local-web development environment",
   "license": "MIT",
   "keywords": [
@@ -67,7 +67,8 @@
     "package:linux": "npm run build && electron-builder --linux --publish never",
     "package:win": "npm run build && electron-builder --win --publish never",
     "package:mac": "npm run build && electron-builder --mac --publish never",
-    "package:mac:zip": "npm run build && electron-builder --mac zip --x64 --publish never"
+    "package:mac:zip": "npm run build && electron-builder --mac zip --x64 --publish never",
+    "release:check": "bash scripts/release-check.sh"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

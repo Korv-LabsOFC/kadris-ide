@@ -8,11 +8,15 @@ import type {
   AppInfo,
   PlatformBridge,
   Result,
-  Workspace
+  Workspace,
 } from '../../../shared/contracts'
 import type { TerminalDataEvent, TerminalExitEvent } from '../../../shared/terminal-contracts'
 import type { TerminalCreateInput, TerminalInfo, TerminalWriteInput, TerminalResizeInput, TerminalCloseInput } from '../../../shared/terminal-contracts'
 import type { AiProviderConfiguration, ApiKeyProviderId } from '../../../shared/ai-provider-contracts'
+import type { GitStatus, GitDiff, GitCommitLog, GitBranchInfo, GitStashInfo, GitAddInput, GitCommitInput, GitCheckoutInput } from '../../../shared/git-contracts'
+import type { SearchInput, SearchResult } from '../../../shared/search-contracts'
+import type { SessionState } from '../../../shared/session-contracts'
+import type { PermissionRequest } from '../../../shared/permission-contracts'
 import { WebApiClient } from './WebApiClient'
 
 type TerminalBridgeApi = PlatformBridge['terminal']
@@ -171,6 +175,41 @@ export function createWebPlatformBridge(): PlatformBridge {
       },
       stop: () => client.post<null>('/api/live-server/stop'),
       getStatus: () => client.get<{ running: boolean; url: string | null; filePath: string | null }>('/api/live-server/status')
+    }),
+    git: Object.freeze({
+      isRepo: () => client.get<boolean>('/api/git/is-repo'),
+      init: () => client.post<null>('/api/git/init'),
+      status: () => client.get<GitStatus>('/api/git/status'),
+      diff: () => client.get<GitDiff>('/api/git/diff'),
+      add: (input: GitAddInput) => client.post<null>('/api/git/add', input),
+      commit: (input: GitCommitInput) => client.post<null>('/api/git/commit', input),
+      log: () => client.get<GitCommitLog>('/api/git/log'),
+      branch: () => client.get<GitBranchInfo>('/api/git/branch'),
+      checkout: (input: GitCheckoutInput) => client.post<null>('/api/git/checkout', input),
+      stash: () => client.post<null>('/api/git/stash'),
+      stashPop: () => client.post<null>('/api/git/stash-pop'),
+      stashList: () => client.get<GitStashInfo>('/api/git/stash-list'),
+      push: () => client.post<null>('/api/git/push'),
+      pull: () => client.post<null>('/api/git/pull'),
+      fetch: () => client.post<null>('/api/git/fetch')
+    }),
+    search: Object.freeze({
+      query: (input: SearchInput) => client.post<SearchResult>('/api/search', input)
+    }),
+    session: Object.freeze({
+      save: (state: SessionState) => client.post<null>('/api/session/save', state),
+      load: () => client.get<SessionState | null>('/api/session/load'),
+      clear: () => client.post<null>('/api/session/clear')
+    }),
+    permissions: Object.freeze({
+      getPendingRequests: () => {
+        let requests: PermissionRequest[] = []
+        client.get<PermissionRequest[]>('/api/permissions/pending').then((r) => { if (r.ok) requests = r.value }).catch(() => undefined)
+        return requests
+      },
+      resolvePermission: (id: string, approved: boolean) => { void client.post<null>('/api/permissions/resolve', { id, approved }) },
+      getHistory: () => ({ approved: [], denied: [] }),
+      setAutoApprove: () => undefined
     })
   }
   return Object.freeze(bridge)

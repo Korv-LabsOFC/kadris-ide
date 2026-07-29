@@ -2,7 +2,13 @@ node_modules/
 out/
 dist/
 coverage/
+.vite/
+.cache/
+.tmp/
+temp/
+logs/
 *.log
-.DS_Store
-kadris-*.tgz
+*.tgz
 *.tsbuildinfo
+.DS_Store
+Thumbs.db

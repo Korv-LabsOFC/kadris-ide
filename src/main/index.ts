@@ -6,12 +6,18 @@ import { registerTerminalIpc } from './ipc/register-terminal-ipc'
 import { registerAiProviderIpc } from './ipc/register-ai-provider-ipc'
 import { registerCodexIpc } from './ipc/register-codex-ipc'
 import { registerLiveServerIpc } from './ipc/register-live-server-ipc'
+import { registerGitIpc } from './ipc/register-git-ipc'
+import { registerSearchIpc } from './ipc/register-search-ipc'
+import { registerSessionIpc } from './ipc/register-session-ipc'
 import { createRendererTarget, isAllowedRendererUrl } from './security/renderer-policy'
 import { WorkspaceService } from './services/workspace-service'
 import { TerminalService } from './services/terminal-service'
 import { AiProviderConfigService } from './services/ai-provider-config-service'
 import { CodexService } from './services/codex-service'
 import { LiveServerService } from './services/live-server-service'
+import { GitService } from './services/git-service'
+import { SearchService } from './services/search-service'
+import { SessionService } from './services/session-service'
 import { TERMINAL_CHANNELS } from '../shared/terminal-contracts'
 import { loadWindowState, saveWindowState } from './window-state'
 
@@ -19,8 +25,14 @@ const workspaceService = new WorkspaceService()
 let removeIpcHandlers: (() => void) | undefined
 let removeTerminalIpcHandlers: (() => void) | undefined
 let removeAiProviderIpcHandlers: (() => void) | undefined
+let removeGitIpcHandlers: (() => void) | undefined
+let removeSearchIpcHandlers: (() => void) | undefined
+let removeSessionIpcHandlers: (() => void) | undefined
 let mainWindow: BrowserWindow | null = null
 let creatingWindow: Promise<BrowserWindow> | null = null
+let gitService: GitService | null = null
+let searchService: SearchService | null = null
+let sessionService: SessionService | null = null
 const terminalService = new TerminalService(
   workspaceService,
   (event) => mainWindow?.webContents.send(TERMINAL_CHANNELS.data, event),
@@ -30,6 +42,19 @@ const codexService = new CodexService((url) => shell.openExternal(url))
 let removeCodexIpcHandlers: (() => void) | undefined
 const liveServerService = new LiveServerService()
 let removeLiveServerIpcHandlers: (() => void) | undefined
+
+function updateServicesForWorkspace(): void {
+  const root = workspaceService.getRoot()
+  if (!root) {
+    gitService = null
+    searchService = null
+    sessionService = null
+    return
+  }
+  gitService = new GitService(root)
+  searchService = new SearchService(root)
+  sessionService = new SessionService(root)
+}
 
 // Chromium GPU processes are unreliable on some Linux/Wayland drivers. Software
 // rendering is preferable to an unusable black window and can be opted out.
@@ -141,7 +166,10 @@ async function createWindow(): Promise<BrowserWindow> {
   await window.loadURL(loadUrl)
 
   // Navigation revokes the prior capability; an explicit CLI workspace is granted after load.
-  if (initialWorkspace) await workspaceService.setRoot(initialWorkspace)
+  if (initialWorkspace) {
+    await workspaceService.setRoot(initialWorkspace)
+    updateServicesForWorkspace()
+  }
 
   if (!app.isPackaged && process.env.KADRIS_SMOKE_CAPTURE === '1') {
     await new Promise((resolve) => setTimeout(resolve, 6000))
@@ -169,11 +197,14 @@ app.whenReady().then(async () => {
     const window = mainWindow
     return window !== null && !window.isDestroyed() && event.sender === window.webContents && event.senderFrame === event.sender.mainFrame && isAllowedRendererUrl(event.senderFrame.url, rendererTarget)
   }
-  removeIpcHandlers = registerIpc(workspaceService, isTrustedSender)
+  removeIpcHandlers = registerIpc(workspaceService, isTrustedSender, updateServicesForWorkspace)
   removeTerminalIpcHandlers = registerTerminalIpc(terminalService, isTrustedSender)
   removeAiProviderIpcHandlers = registerAiProviderIpc(new AiProviderConfigService(app.getPath('userData'), safeStorage), isTrustedSender)
   removeCodexIpcHandlers = registerCodexIpc(codexService, isTrustedSender, () => mainWindow?.webContents ?? null, () => workspaceService.getRoot())
   removeLiveServerIpcHandlers = registerLiveServerIpc(liveServerService, workspaceService, isTrustedSender)
+  removeGitIpcHandlers = registerGitIpc(() => gitService, isTrustedSender)
+  removeSearchIpcHandlers = registerSearchIpc(() => searchService, isTrustedSender)
+  removeSessionIpcHandlers = registerSessionIpc(() => sessionService, isTrustedSender)
   creatingWindow = createWindow()
   await creatingWindow
   creatingWindow = null
@@ -196,6 +227,9 @@ app.on('before-quit', () => {
   removeAiProviderIpcHandlers?.()
   removeCodexIpcHandlers?.()
   removeLiveServerIpcHandlers?.()
+  removeGitIpcHandlers?.()
+  removeSearchIpcHandlers?.()
+  removeSessionIpcHandlers?.()
   liveServerService.destroy()
 })
 app.on('second-instance', () => {

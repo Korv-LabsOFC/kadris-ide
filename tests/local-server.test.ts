@@ -23,6 +23,14 @@ function report(): EnvironmentReport {
   }
 }
 
+function termuxReport(): EnvironmentReport {
+  return {
+    ...report(),
+    platform: 'android', runtime: 'native-termux', architecture: 'arm64',
+    isAndroidKernel: true, isTermux: true, recommendedRuntime: 'web'
+  }
+}
+
 async function fixture(): Promise<{ root: string; web: string; workspace: string }> {
   const root = await mkdtemp(join(tmpdir(), 'kadris-local-server-'))
   temporaryPaths.push(root)
@@ -35,9 +43,11 @@ async function fixture(): Promise<{ root: string; web: string; workspace: string
   return { root, web, workspace }
 }
 
+let nextPort = 43173
+
 async function start(): Promise<LocalServerHandle> {
   const { web, workspace } = await fixture()
-  const server = await startLocalServer({ webRoot: web, workspacePath: workspace, report: report(), port: 43173 })
+  const server = await startLocalServer({ webRoot: web, workspacePath: workspace, report: report(), port: nextPort++ })
   servers.push(server)
   return server
 }
@@ -88,12 +98,49 @@ describe('secure local server', () => {
     expect(oversized.status).toBe(413)
   })
 
+  it('initializes Git for a workspace that is not yet a repository', async () => {
+    const server = await start()
+    const origin = `http://${server.host}:${server.port}`
+    const headers = { Authorization: `Bearer ${server.token}`, 'Content-Type': 'application/json' }
+    const before = await fetch(`${origin}/api/git/is-repo`, { headers })
+    expect(await before.json()).toMatchObject({ ok: true, value: false })
+    const initialized = await fetch(`${origin}/api/git/init`, { method: 'POST', headers, body: '{}' })
+    expect(initialized.status).toBe(200)
+    const after = await fetch(`${origin}/api/git/is-repo`, { headers })
+    expect(await after.json()).toMatchObject({ ok: true, value: true })
+  })
+
+  it('allows the configured native Termux home and returns a structured denial for its prefix', async () => {
+    const { root, web, workspace } = await fixture()
+    const prefix = join(root, 'prefix')
+    const controlledTemp = join(root, 'kadris-temp')
+    await mkdir(prefix)
+    const server = await startLocalServer({
+      webRoot: web,
+      workspacePath: workspace,
+      report: termuxReport(),
+      port: nextPort++,
+      pathPolicyOverrides: { home: workspace, prefix, tempRoot: controlledTemp }
+    })
+    servers.push(server)
+    const response = await fetch(`http://${server.host}:${server.port}/api/workspace/open`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${server.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: prefix })
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      error: { code: 'NOT_AUTHORIZED', pathCode: 'TERMUX_PREFIX_NOT_AUTHORIZED' }
+    })
+  })
+
   it('keeps workspace reads confined when a symlink points outside', async () => {
     const { root, web, workspace } = await fixture()
     const outside = join(root, 'secret.txt')
     await writeFile(outside, 'private')
     await symlink(outside, join(workspace, 'outside.txt'))
-    const server = await startLocalServer({ webRoot: web, workspacePath: workspace, report: report(), port: 43173 })
+    const server = await startLocalServer({ webRoot: web, workspacePath: workspace, report: report(), port: nextPort++ })
     servers.push(server)
     const response = await fetch(`http://${server.host}:${server.port}/api/files/read`, {
       method: 'POST',
