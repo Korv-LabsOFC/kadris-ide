@@ -1,0 +1,154 @@
+{
+  "name": "kadris",
+  "productName": "Kadris",
+  "desktopName": "kadris.desktop",
+  "author": "Kadris contributors",
+  "homepage": "https://github.com/israelmarques1024-dotcom/kadris-ide#readme",
+  "version": "1.0.0",
+  "description": "Kadris hybrid Electron and secure local-web development environment",
+  "license": "MIT",
+  "keywords": [
+    "ide",
+    "electron",
+    "termux",
+    "monaco-editor",
+    "developer-tools"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/israelmarques1024-dotcom/kadris-ide.git"
+  },
+  "bugs": {
+    "url": "https://github.com/israelmarques1024-dotcom/kadris-ide/issues"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "main": "dist/server/index.js",
+  "exports": {
+    ".": "./dist/server/index.js",
+    "./server": "./dist/server/index.js"
+  },
+  "bin": {
+    "kadris": "dist/cli/index.js"
+  },
+  "files": [
+    "dist/cli/**",
+    "dist/server/**",
+    "dist/shared/**",
+    "dist/web/**",
+    "install.sh",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "docs/**"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "npm run dev:desktop",
+    "dev:web": "npm run build:web && npm run build:portable && node dist/cli/index.js --web",
+    "dev:server": "npm run build:web && npm run build:portable && node dist/cli/index.js --web --no-open",
+    "dev:desktop": "electron-vite dev --entry out/main/index.js",
+    "dev:cli": "npm run build:portable && node dist/cli/index.js --diagnose-env",
+    "build": "npm run typecheck && npm run build:web && npm run build:portable && npm run build:desktop",
+    "build:web": "vite build --config vite.web.config.ts",
+    "build:portable": "vite build --config vite.node.config.ts",
+    "build:server": "npm run build:portable",
+    "build:cli": "npm run build:portable",
+    "build:desktop": "electron-vite build",
+    "preview": "electron-vite preview --entry out/main/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/environment-detector.test.ts tests/contracts.test.ts tests/workspace-service.test.ts",
+    "test:integration": "vitest run tests/local-server.test.ts tests/live-server-service.test.ts",
+    "prepack": "npm run typecheck && npm run build:web && npm run build:portable",
+    "desktop:rebuild": "electron-builder install-app-deps",
+    "package:linux": "npm run build && electron-builder --linux --publish never",
+    "package:win": "npm run build && electron-builder --win --publish never",
+    "package:mac": "npm run build && electron-builder --mac --publish never",
+    "package:mac:zip": "npm run build && electron-builder --mac zip --x64 --publish never"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "lucide-react": "^0.468.0",
+    "monaco-editor": "^0.55.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "ws": "^8.21.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.3",
+    "@types/react-dom": "^19.0.2",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^43.1.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "eslint": "^9.17.0",
+    "globals": "^15.14.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.19.1",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.10"
+  },
+  "build": {
+    "appId": "com.kadris.ide",
+    "asar": true,
+    "publish": null,
+    "extraMetadata": {
+      "main": "out/main/index.js"
+    },
+    "directories": {
+      "buildResources": "resources",
+      "output": "dist/${os}-${arch}"
+    },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "out/**/*",
+      "logo.png",
+      "resources/icon.png"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "icon.png",
+      "category": "Development",
+      "executableName": "kadris",
+      "maintainer": "Kadris contributors",
+      "syncDesktopName": true,
+      "synopsis": "Secure desktop development environment"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "icon.png",
+      "category": "public.app-category.developer-tools"
+    }
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.1.0"
+  }
+}

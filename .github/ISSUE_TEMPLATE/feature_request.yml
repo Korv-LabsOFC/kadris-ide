@@ -1,0 +1,46 @@
+name: Feature request
+description: Propose a focused improvement to Kadris
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the concrete user problem rather than only the proposed implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain the desired behavior and relevant workflow.
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Relevant runtime
+      options:
+        - Shared across Electron and local web
+        - Electron desktop
+        - Local web
+        - Native Termux design (not officially verified)
+        - CLI or environment detection
+        - Packaging or documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and compatibility considerations
+      description: Note filesystem, terminal, network, credential, platform, or backward-compatibility implications.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: I am not claiming that an npm package, GitHub release, or native Termux verification currently exists.
+          required: true

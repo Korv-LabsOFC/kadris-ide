@@ -1,0 +1,4 @@
+eb6cfdaa2f52e08fe94e57ffd2135957df35b80db4de0ab541d17e48143cdcce  dist/linux-x64/Kadris-0.1.0-linux-x86_64.AppImage
+db9a10ebd10cdad2c942fabf64be9f39ba32e02a1ed58236424db57529b718fb  dist/linux-x64/Kadris-0.1.0-linux-amd64.deb
+68a31f5780893a62bf5d733de80cf1256426e4c8d5cf4dbdcf7031802a91fe3f  kadris-0.1.0.tgz
+723c1361b8b6279339c203166ac5eeb22b374900887ba9b2cd8adb7593eaec2d  install.sh
