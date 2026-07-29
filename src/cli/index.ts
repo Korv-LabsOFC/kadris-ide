@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs'
 import { rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, resolve } from 'node:path'
@@ -10,7 +11,10 @@ import { CLI_HELP, parseCliArguments } from './arguments'
 import { openBrowser } from './browser'
 import { findDesktopLaunch, launchDesktop } from './desktop'
 
-const VERSION = '0.1.0'
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const ROOT = resolve(__dirname, '..', '..')
+const pkg = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf-8'))
+const VERSION: string = pkg.version
 
 function validateNodeVersion(): void {
   const [major = 0, minor = 0] = process.versions.node.split('.').map(Number)

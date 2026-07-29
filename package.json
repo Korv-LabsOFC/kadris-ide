@@ -4,7 +4,7 @@
   "desktopName": "kadris.desktop",
   "author": "Kadris contributors",
   "homepage": "https://github.com/israelmarques1024-dotcom/kadris-ide#readme",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Kadris hybrid Electron and secure local-web development environment",
   "license": "MIT",
   "keywords": [
