@@ -1,0 +1,100 @@
+name: Build draft release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build, for example v0.1.0
+        required: true
+        type: string
+      confirmation:
+        description: Type CREATE DRAFT to continue
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: ${{ inputs.confirmation == 'CREATE DRAFT' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux
+            artifact: linux-installers
+            paths: |
+              dist/**/*.AppImage
+              dist/**/*.deb
+          - os: windows-latest
+            target: win
+            artifact: windows-installers
+            paths: dist/**/*.exe
+          - os: macos-latest
+            target: mac
+            artifact: macos-installers
+            paths: |
+              dist/**/*.dmg
+              dist/**/*.zip
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+
+      - name: Validate tag and package version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          case "$RELEASE_TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "Tag must begin with v and a semantic version" >&2; exit 1 ;;
+          esac
+          node -e "const p=require('./package.json'); if(process.env.RELEASE_TAG!=='v'+p.version) throw Error('Tag does not match package version')"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify
+        run: npm run typecheck && npm run lint && npm test
+
+      - name: Build native package
+        run: npm run package:${{ matrix.target }}
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.paths }}
+          if-no-files-found: error
+          retention-days: 14
+
+  draft:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: gh release create "$RELEASE_TAG" artifacts/* --draft --verify-tag --generate-notes --title "Kadris $RELEASE_TAG"
