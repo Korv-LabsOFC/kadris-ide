@@ -1,10 +1,7 @@
 # Kadris
 
-<p align="center">
-  <a href="https://www.youtube.com/@capideb">
-    <img src="https://img.shields.io/badge/YouTube-Capi.deb-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube — Capi.deb">
-  </a>
-</p>
+
+
 
 Kadris is a technical alpha IDE with a shared React interface for two local runtimes:
 
