@@ -3,7 +3,7 @@
   "productName": "Kadris",
   "desktopName": "kadris.desktop",
   "author": "Kadris contributors",
-  "homepage": "https://github.com/israelmarques1024-dotcom/kadris-ide#readme",
+  "homepage": "https://github.com/karnel-termuxOFC/kadris-ide#readme",
   "version": "0.1.0-alpha.0",
   "description": "Kadris hybrid Electron and secure local-web development environment",
   "license": "MIT",
@@ -16,10 +16,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/israelmarques1024-dotcom/kadris-ide.git"
+    "url": "git+https://github.com/karnel-termuxOFC/kadris-ide.git"
   },
   "bugs": {
-    "url": "https://github.com/israelmarques1024-dotcom/kadris-ide/issues"
+    "url": "https://github.com/karnel-termuxOFC/kadris-ide/issues"
   },
   "engines": {
     "node": ">=22.12.0"
