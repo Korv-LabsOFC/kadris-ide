@@ -437,6 +437,7 @@ export function App() {
     </main>
     <TerminalPanel />
     <footer className="status-bar">
+      <span className="status-bar-brand" aria-label="KORV Labs">KORV Labs</span>
       <span><ShieldCheck size={13} aria-hidden="true" />{bridge.runtime === 'electron' ? 'Sandboxed renderer' : 'Protected local session'}</span>
       <span>{document?.relativePath ?? (workspace ? workspace.path : 'No workspace')}</span>
       <span>{appInfo ? `v${appInfo.version}` : appInfoFailed ? 'Version unavailable' : 'Starting...'}</span>
