@@ -5,7 +5,7 @@ Thank you for your interest in contributing to Kadris. This project aims to be a
 ## Quick start
 
 ```bash
-git clone https://github.com/karnel-termuxOFC/kadris-ide.git
+git clone https://github.com/Korv-LabsOFC/kadris-ide.git
 cd kadris-ide
 npm install
 npm run typecheck
