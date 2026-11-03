@@ -117,3 +117,9 @@ The session URL contains a bearer token. Do not share it.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+---
+
+## KORV Labs
+
+This project is part of the **KORV Labs** ecosystem — an independent technology lab building software, developer tools, and digital products.
