@@ -107,8 +107,8 @@ The session URL contains a bearer token. Do not share it.
 
 ## Repository
 
-- Source: <https://github.com/karnel-termuxOFC/kadris-ide>
-- Issues: <https://github.com/karnel-termuxOFC/kadris-ide/issues>
+- Source: <https://github.com/Korv-LabsOFC/kadris-ide>
+- Issues: <https://github.com/Korv-LabsOFC/kadris-ide/issues>
 - Release readiness: [docs/ALPHA-READINESS-REPORT.md](docs/ALPHA-READINESS-REPORT.md)
 - Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Security: [docs/SECURITY.md](docs/SECURITY.md)
